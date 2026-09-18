@@ -216,16 +216,23 @@ class ESXiHostSwitch(SwitchEntity):
         self._entry_id = config_entry.entry_id
         self._state = None
         self._host_data = {}
+        self._shutdown_requested = False
 
     def update(self):
         """Update the switch state."""
         try:
             # Get fresh data from the coordinator
-            self.hass.data[DOMAIN_DATA][self._entry_id]["client"].update_data()
+            update_succeeded = self.hass.data[DOMAIN_DATA][self._entry_id]["client"].update_data()
             self._host_data = self.hass.data[DOMAIN_DATA][self._entry_id]["vmhost"][self._host_name]
+            self._host_data["connection_status"] = "connected" if update_succeeded else "unreachable"
 
             # Set state based on host power state
             host_state = self._host_data.get("state", "unknown")
+            if self._shutdown_requested and host_state == "poweredOn":
+                self._host_data["state"] = "poweredOff"
+                return
+            if self._shutdown_requested:
+                self._shutdown_requested = False
             self._state = host_state == "poweredOn"
 
         except KeyError:
@@ -277,6 +284,7 @@ class ESXiHostSwitch(SwitchEntity):
             attrs_map = {
                 "state": "state",  # Power state is relevant to the power switch
                 "shutdown_supported": "shutdown_supported",  # Power capability info
+                "connection_status": "connection_status",
             }
             for attr_name, data_key in attrs_map.items():
                 if data_key in self._host_data:
@@ -310,7 +318,7 @@ class ESXiHostSwitch(SwitchEntity):
                 return
 
             # Use shutdown command without force - safer approach
-            await self.hass.async_add_executor_job(
+            shutdown_sent = await self.hass.async_add_executor_job(
                 host_pwr,
                 self.hass,
                 target_host,
@@ -320,8 +328,11 @@ class ESXiHostSwitch(SwitchEntity):
                 True    # notify
             )
 
-            # Request immediate update
-            await self.hass.async_add_executor_job(self.update)
+            if shutdown_sent:
+                self._shutdown_requested = True
+                self._state = False
+                self._host_data["state"] = "poweredOff"
+                self.async_write_ha_state()
 
         except Exception as e:
             _LOGGER.error("Failed to shutdown host %s: %s", self._host_name, e)

@@ -231,6 +231,9 @@ class EsxiStats:
             content = conn.RetrieveContent()
         except Exception as error:  # pylint: disable=broad-except
             _LOGGER.debug("ESXi host is not reachable - skipping update - %s", error)
+            for host_data in self.hass.data[DOMAIN_DATA][self.entry]["vmhost"].values():
+                host_data["connection_status"] = "unreachable"
+            return False
         else:
             # get host stats
             if self.config.get("vmhost") is True:
@@ -247,9 +250,9 @@ class EsxiStats:
                     host_name = esxi_host.summary.config.name.replace(" ", "_").lower()
 
                     _LOGGER.debug("Getting stats for vmhost: %s", host_name)
-                    self.hass.data[DOMAIN_DATA][self.entry]["vmhost"][
-                        host_name
-                    ] = get_host_info(esxi_host)
+                    host_data = get_host_info(esxi_host)
+                    host_data["connection_status"] = "connected"
+                    self.hass.data[DOMAIN_DATA][self.entry]["vmhost"][host_name] = host_data
 
             # get datastore stats
             if self.config.get("datastore") is True:
@@ -421,6 +424,8 @@ class EsxiStats:
         finally:
             if conn is not None:
                 esx_disconnect(conn)
+
+        return True
 
 
 def check_files(hass):
