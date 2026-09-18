@@ -8,6 +8,7 @@ RUN apt-get update \
 
 RUN python -m pip install --upgrade colorlog black pylint python-language-server
 RUN python -m pip install --upgrade homeassistant
+RUN python -m pip install --upgrade home-assistant-frontend numpy
 RUN cd && mkdir -p /config/custom_components
 
 

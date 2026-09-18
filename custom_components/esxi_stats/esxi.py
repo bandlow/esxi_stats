@@ -247,6 +247,18 @@ def get_cpu_fan_speed(host, host_name):
 
 def get_host_info(host):
     """Get host information."""
+    def _safe_div_round(value, divisor, digits):
+        """Return rounded division result or n/a for missing values."""
+        if value is None or divisor in (None, 0):
+            return "n/a"
+        return round(value / divisor, digits)
+
+    def _safe_mul_div_round(value_a, value_b, divisor, digits):
+        """Return rounded multiply/divide result or n/a for missing values."""
+        if value_a is None or value_b is None or divisor in (None, 0):
+            return "n/a"
+        return round((value_a * value_b) / divisor, digits)
+
     host_summary = host.summary
     host_state = host_summary.runtime.powerState
     host_name = host_summary.config.name.replace(" ", "_").lower()
@@ -262,13 +274,16 @@ def get_host_info(host):
     if host_state == "poweredOn":
         host_version = host_summary.config.product.version
         host_build = host_summary.config.product.build
-        host_uptime = round(host_summary.quickStats.uptime / 3600, 1)
-        host_cpu_total = round(
-            host_summary.hardware.cpuMhz * host_summary.hardware.numCpuCores / 1000, 1
+        host_uptime = _safe_div_round(host_summary.quickStats.uptime, 3600, 1)
+        host_cpu_total = _safe_mul_div_round(
+            host_summary.hardware.cpuMhz,
+            host_summary.hardware.numCpuCores,
+            1000,
+            1,
         )
-        host_mem_total = round(host_summary.hardware.memorySize / 1073741824, 2)
-        host_cpu_usage = round(host_summary.quickStats.overallCpuUsage / 1000, 1)
-        host_mem_usage = round(host_summary.quickStats.overallMemoryUsage / 1024, 2)
+        host_mem_total = _safe_div_round(host_summary.hardware.memorySize, 1073741824, 2)
+        host_cpu_usage = _safe_div_round(host_summary.quickStats.overallCpuUsage, 1000, 1)
+        host_mem_usage = _safe_div_round(host_summary.quickStats.overallMemoryUsage, 1024, 2)
 
         # Get current power policy
         try:
@@ -364,15 +379,32 @@ def get_vm_info(virtual_machine):
     vm_sum = virtual_machine.summary
     vm_run = virtual_machine.runtime
     vm_snap = virtual_machine.snapshot
-    vm_hardware = virtual_machine.config.hardware
 
     vm_name = vm_sum.config.name.replace(" ", "_").lower()
     vm_proper_name = vm_sum.config.name
 
-    # If a VM configuration is in INVALID state, return Inalid status
     if vm_conf == "red":
-        vm_data = {"name": vm_name, "status": "Invalid"}
+        vm_data = {
+            "name": vm_name,
+            "vm_name": vm_proper_name,
+            "status": "Invalid",
+        }
         _LOGGER.debug(vm_data)
+        return vm_data
+
+    vm_config = virtual_machine.config
+    vm_hardware = vm_config.hardware if vm_config is not None else None
+    vm_datastores = virtual_machine.datastore
+    if vm_config is None or vm_hardware is None or not vm_datastores:
+        vm_data = {
+            "name": vm_name,
+            "vm_name": vm_proper_name,
+            "status": "Invalid",
+        }
+        _LOGGER.warning(
+            "VM %s imported as Invalid because its configuration or datastore is unavailable",
+            vm_proper_name,
+        )
         return vm_data
 
     vm_tools_status = vm_sum.guest.toolsStatus
