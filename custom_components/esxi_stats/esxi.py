@@ -379,15 +379,32 @@ def get_vm_info(virtual_machine):
     vm_sum = virtual_machine.summary
     vm_run = virtual_machine.runtime
     vm_snap = virtual_machine.snapshot
-    vm_hardware = virtual_machine.config.hardware
 
     vm_name = vm_sum.config.name.replace(" ", "_").lower()
     vm_proper_name = vm_sum.config.name
 
-    # If a VM configuration is in INVALID state, return Inalid status
     if vm_conf == "red":
-        vm_data = {"name": vm_name, "status": "Invalid"}
+        vm_data = {
+            "name": vm_name,
+            "vm_name": vm_proper_name,
+            "status": "Invalid",
+        }
         _LOGGER.debug(vm_data)
+        return vm_data
+
+    vm_config = virtual_machine.config
+    vm_hardware = vm_config.hardware if vm_config is not None else None
+    vm_datastores = virtual_machine.datastore
+    if vm_config is None or vm_hardware is None or not vm_datastores:
+        vm_data = {
+            "name": vm_name,
+            "vm_name": vm_proper_name,
+            "status": "Invalid",
+        }
+        _LOGGER.warning(
+            "VM %s imported as Invalid because its configuration or datastore is unavailable",
+            vm_proper_name,
+        )
         return vm_data
 
     vm_tools_status = vm_sum.guest.toolsStatus
